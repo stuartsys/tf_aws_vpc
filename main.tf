@@ -2,7 +2,7 @@ resource "aws_vpc" "mod" {
   cidr_block           = "${var.cidr}"
   enable_dns_hostnames = "${var.enable_dns_hostnames}"
   enable_dns_support   = "${var.enable_dns_support}"
-  tags                 = "${merge(var.tags, map("Name", format("%s", var.name)))}"
+  tags                 = "${merge(var.tags, var.vpc_tags, map("Name", format("%s", var.name)))}"
 }
 
 resource "aws_internet_gateway" "mod" {
@@ -34,7 +34,6 @@ resource "aws_route_table" "private" {
   propagating_vgws = ["${var.private_propagating_vgws}"]
   count            = "${length(var.private_subnets)}"
   tags             = "${merge(var.tags, map("Name", format("%s-rt-private-%s", var.name, element(var.azs, count.index))))}"
-
 }
 
 resource "aws_subnet" "private" {
@@ -42,16 +41,15 @@ resource "aws_subnet" "private" {
   cidr_block        = "${var.private_subnets[count.index]}"
   availability_zone = "${element(var.azs, count.index)}"
   count             = "${length(var.private_subnets)}"
-  tags              = "${merge(var.tags, map("Name", format("%s-subnet-private-%s", var.name, element(var.azs, count.index))))}"
+  tags              = "${merge(var.tags, var.private_subnet_tags, map("Name", format("%s-private-%s", var.name, element(var.azs, count.index))))}"
 }
 
 resource "aws_subnet" "public" {
-  vpc_id            = "${aws_vpc.mod.id}"
-  cidr_block        = "${var.public_subnets[count.index]}"
-  availability_zone = "${element(var.azs, count.index)}"
-  count             = "${length(var.public_subnets)}"
-  tags              = "${merge(var.tags, map("Name", format("%s-subnet-public-%s", var.name, element(var.azs, count.index))))}"
-
+  vpc_id                  = "${aws_vpc.mod.id}"
+  cidr_block              = "${var.public_subnets[count.index]}"
+  availability_zone       = "${element(var.azs, count.index)}"
+  count                   = "${length(var.public_subnets)}"
+  tags                    = "${merge(var.tags, var.public_subnet_tags, map("Name", format("%s-public-%s", var.name, element(var.azs, count.index))))}"
   map_public_ip_on_launch = "${var.map_public_ip_on_launch}"
 }
 
