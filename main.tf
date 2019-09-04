@@ -1,79 +1,113 @@
 resource "aws_vpc" "mod" {
-  cidr_block           = "${var.cidr}"
-  enable_dns_hostnames = "${var.enable_dns_hostnames}"
-  enable_dns_support   = "${var.enable_dns_support}"
-  tags                 = "${merge(var.tags, var.vpc_tags, map("Name", format("%s", var.name)))}"
+  cidr_block           = var.cidr
+  enable_dns_hostnames = var.enable_dns_hostnames
+  enable_dns_support   = var.enable_dns_support
+  tags = merge(
+    var.tags,
+    var.vpc_tags,
+    {
+      "Name" = format("%s", var.name)
+    },
+  )
 }
 
 resource "aws_internet_gateway" "mod" {
-  vpc_id = "${aws_vpc.mod.id}"
-  tags   = "${merge(var.tags, map("Name", format("%s-igw", var.name)))}"
+  vpc_id = aws_vpc.mod.id
+  tags = merge(
+    var.tags,
+    {
+      "Name" = format("%s-igw", var.name)
+    },
+  )
 }
 
 resource "aws_route_table" "public" {
-  vpc_id           = "${aws_vpc.mod.id}"
-  propagating_vgws = ["${var.public_propagating_vgws}"]
-  tags             = "${merge(var.tags, map("Name", format("%s-rt-public", var.name)))}"
+  vpc_id           = aws_vpc.mod.id
+  propagating_vgws = var.public_propagating_vgws
+  tags = merge(
+    var.tags,
+    {
+      "Name" = format("%s-rt-public", var.name)
+    },
+  )
 }
 
 resource "aws_route" "public_internet_gateway" {
-  route_table_id         = "${aws_route_table.public.id}"
+  route_table_id         = aws_route_table.public.id
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = "${aws_internet_gateway.mod.id}"
+  gateway_id             = aws_internet_gateway.mod.id
 }
 
 resource "aws_route" "private_nat_gateway" {
-  route_table_id         = "${element(aws_route_table.private.*.id, count.index)}"
+  route_table_id         = element(aws_route_table.private.*.id, count.index)
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = "${element(aws_nat_gateway.natgw.*.id, count.index)}"
-  count                  = "${length(var.private_subnets) * lookup(map(var.enable_nat_gateway, 1), "true", 0)}"
+  nat_gateway_id         = element(aws_nat_gateway.natgw.*.id, count.index)
+  count                  = var.enable_nat_gateway ? length(var.private_subnets) : 0
 }
 
 resource "aws_route_table" "private" {
-  vpc_id           = "${aws_vpc.mod.id}"
-  propagating_vgws = ["${var.private_propagating_vgws}"]
-  count            = "${length(var.private_subnets)}"
-  tags             = "${merge(var.tags, map("Name", format("%s-rt-private-%s", var.name, element(var.azs, count.index))))}"
+  vpc_id           = aws_vpc.mod.id
+  propagating_vgws = var.private_propagating_vgws
+  count            = length(var.private_subnets)
+  tags = merge(
+    var.tags,
+    {
+      "Name" = format("%s-rt-private-%s", var.name, element(var.azs, count.index))
+    },
+  )
 }
 
 resource "aws_subnet" "private" {
-  vpc_id            = "${aws_vpc.mod.id}"
-  cidr_block        = "${var.private_subnets[count.index]}"
-  availability_zone = "${element(var.azs, count.index)}"
-  count             = "${length(var.private_subnets)}"
-  tags              = "${merge(var.tags, var.private_subnet_tags, map("Name", format("%s-private-%s", var.name, element(var.azs, count.index))))}"
+  vpc_id            = aws_vpc.mod.id
+  cidr_block        = var.private_subnets[count.index]
+  availability_zone = element(var.azs, count.index)
+  count             = length(var.private_subnets)
+  tags = merge(
+    var.tags,
+    var.private_subnet_tags,
+    {
+      "Name" = format("%s-private-%s", var.name, element(var.azs, count.index))
+    },
+  )
 }
 
 resource "aws_subnet" "public" {
-  vpc_id                  = "${aws_vpc.mod.id}"
-  cidr_block              = "${var.public_subnets[count.index]}"
-  availability_zone       = "${element(var.azs, count.index)}"
-  count                   = "${length(var.public_subnets)}"
-  tags                    = "${merge(var.tags, var.public_subnet_tags, map("Name", format("%s-public-%s", var.name, element(var.azs, count.index))))}"
-  map_public_ip_on_launch = "${var.map_public_ip_on_launch}"
+  vpc_id            = aws_vpc.mod.id
+  cidr_block        = var.public_subnets[count.index]
+  availability_zone = element(var.azs, count.index)
+  count             = length(var.public_subnets)
+  tags = merge(
+    var.tags,
+    var.public_subnet_tags,
+    {
+      "Name" = format("%s-public-%s", var.name, element(var.azs, count.index))
+    },
+  )
+  map_public_ip_on_launch = var.map_public_ip_on_launch
 }
 
 resource "aws_eip" "nateip" {
   vpc   = true
-  count = "${length(var.private_subnets) * lookup(map(var.enable_nat_gateway, 1), "true", 0)}"
+  count = var.enable_nat_gateway ? length(var.private_subnets) : 0
 }
 
 resource "aws_nat_gateway" "natgw" {
-  allocation_id = "${element(aws_eip.nateip.*.id, count.index)}"
-  subnet_id     = "${element(aws_subnet.public.*.id, count.index)}"
-  count         = "${length(var.private_subnets) * lookup(map(var.enable_nat_gateway, 1), "true", 0)}"
+  allocation_id = element(aws_eip.nateip.*.id, count.index)
+  subnet_id     = element(aws_subnet.public.*.id, count.index)
+  count         = var.enable_nat_gateway ? length(var.private_subnets) : 0
 
-  depends_on = ["aws_internet_gateway.mod"]
+  depends_on = [aws_internet_gateway.mod]
 }
 
 resource "aws_route_table_association" "private" {
-  count          = "${length(var.private_subnets)}"
-  subnet_id      = "${element(aws_subnet.private.*.id, count.index)}"
-  route_table_id = "${element(aws_route_table.private.*.id, count.index)}"
+  count          = length(var.private_subnets)
+  subnet_id      = element(aws_subnet.private.*.id, count.index)
+  route_table_id = element(aws_route_table.private.*.id, count.index)
 }
 
 resource "aws_route_table_association" "public" {
-  count          = "${length(var.public_subnets)}"
-  subnet_id      = "${element(aws_subnet.public.*.id, count.index)}"
-  route_table_id = "${aws_route_table.public.id}"
+  count          = length(var.public_subnets)
+  subnet_id      = element(aws_subnet.public.*.id, count.index)
+  route_table_id = aws_route_table.public.id
 }
+
