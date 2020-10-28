@@ -89,12 +89,15 @@ resource "aws_subnet" "public" {
 resource "aws_eip" "nateip" {
   vpc   = true
   count = var.enable_nat_gateway ? length(var.private_subnets) : 0
+  tags  = var.tags
 }
 
 resource "aws_nat_gateway" "natgw" {
   allocation_id = element(aws_eip.nateip.*.id, count.index)
   subnet_id     = element(aws_subnet.public.*.id, count.index)
   count         = var.enable_nat_gateway ? length(var.private_subnets) : 0
+
+  tags = var.tags
 
   depends_on = [aws_internet_gateway.mod]
 }
@@ -110,4 +113,3 @@ resource "aws_route_table_association" "public" {
   subnet_id      = element(aws_subnet.public.*.id, count.index)
   route_table_id = aws_route_table.public.id
 }
-
